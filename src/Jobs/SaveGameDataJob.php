@@ -18,9 +18,9 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
-class SaveGameDataJob implements ShouldQueue
+class SaveGameDataJob extends AbstractPCGamingWikiJob implements ShouldQueue
 {
-    use Dispatchable, Queueable, SerializesModels;
+    // Traits are provided by the abstract base
 
     /**
      * The game data payload from the API.
@@ -46,9 +46,11 @@ class SaveGameDataJob implements ShouldQueue
     {
         // 1) Upsert central wikipage (if URL or title provided)
         $wikipageId = null;
+        $wikipage = null;
         $title = $this->data['title'] ?? $this->data['page_name'] ?? null;
         $pcgwUrl = $this->data['pcgw_url'] ?? null;
         $html = null; // will reuse if fetched
+        $wikitext = null; // will reuse if fetched
         if ($title || $pcgwUrl) {
             $wikipage = Wikipage::query()
                 ->when($pcgwUrl, fn($q) => $q->where('pcgw_url', $pcgwUrl))
@@ -69,29 +71,9 @@ class SaveGameDataJob implements ShouldQueue
                 if ($dirty) { $wikipage->save(); }
             }
 
-            // 1.1) Enrich wikipage description and wikitext if missing
-            try {
-                $pageId = $this->data['page_id'] ?? null;
-                $wpDirty = false;
-                if (empty($wikipage->description) || empty($wikipage->wikitext)) {
-                    // Fetch HTML once; will also be reused for taxonomy parse later
-                    $html = $this->fetchInfoboxHtml($title, $pageId);
-                }
-                if (empty($wikipage->description) && $html) {
-                    $desc = $this->parseLeadFromHtml($html);
-                    if ($desc) { $wikipage->description = $desc; $wpDirty = true; }
-                }
-                if (empty($wikipage->wikitext)) {
-                    $wt = $this->fetchWikitext($title, $pageId);
-                    if ($wt) { $wikipage->wikitext = $wt; $wpDirty = true; }
-                }
-                if ($wpDirty) { $wikipage->save(); }
-            } catch (\Throwable $e) {
-                Log::warning('PCGW SaveGameDataJob: failed to enrich wikipage meta', [
-                    'title' => $title,
-                    'error' => $e->getMessage(),
-                ]);
-            }
+            // Delay wikipage description/wikitext enrichment until after gating succeeds to avoid unnecessary requests
+            // We will still reuse any HTML/Wikitext fetched later for data parsing.
+            $pageId = $this->data['page_id'] ?? null;
 
             $wikipageId = $wikipage->id;
         }
@@ -101,48 +83,41 @@ class SaveGameDataJob implements ShouldQueue
             return;
         }
 
-        // 1.5) Enrich payload from PCGamingWiki if key fields are missing (Cargo)
+        // 1.5) Determine enrichment needs and prefer HTML parse first; use Cargo only as fallback
         $needsDevelopers = empty($this->data['developers'] ?? null);
         $needsPublishers = empty($this->data['publishers'] ?? null) && empty($this->data['publisher'] ?? null);
-        $needsRelease = empty($this->data['release_date'] ?? null);
-        $needsCover = empty($this->data['cover_url'] ?? null);
-        if ($title && ($needsDevelopers || $needsPublishers || $needsRelease || $needsCover)) {
-            try {
-                $pageId = $this->data['page_id'] ?? null;
-                $fetched = $this->fetchInfoboxData($title, $pageId);
-                // Merge only missing keys
-                foreach ([
-                    'developers' => 'developers',
-                    'publishers' => 'publishers',
-                    'release_date' => 'release_date',
-                    'cover_url' => 'cover_url',
-                ] as $src => $dst) {
-                    if (($this->data[$dst] ?? null) === null && ($fetched[$src] ?? null) !== null) {
-                        $this->data[$dst] = $fetched[$src];
-                    }
-                }
-                // Backward compatibility: some sources might provide 'publisher' singular
-                if (($this->data['publishers'] ?? null) === null && ($fetched['publisher'] ?? null) !== null) {
-                    $this->data['publishers'] = $fetched['publisher'];
-                }
-            } catch (\Throwable $e) {
-                Log::warning('PCGW SaveGameDataJob: enrichment failed', [
-                    'title' => $title,
-                    'error' => $e->getMessage(),
-                ]);
-            }
-        }
+        $needsRelease    = empty($this->data['release_date'] ?? null);
+        $needsCover      = empty($this->data['cover_url'] ?? null);
 
-        // 1.6) Enrich from HTML infobox before deciding to create a game row
-        $needsEngines   = empty($this->data['engines'] ?? null);
-        $needsModes     = empty($this->data['modes'] ?? null);
-        $needsGenres    = empty($this->data['genres'] ?? null);
-        $needsPlatforms = empty($this->data['platforms'] ?? null);
-        $needsSeries    = empty($this->data['series'] ?? null);
-        if ($title && ($needsEngines || $needsModes || $needsGenres || $needsPlatforms || $needsSeries || $needsRelease || $needsCover || $needsDevelopers || $needsPublishers)) {
+        $needsEngines    = empty($this->data['engines'] ?? null);
+        $needsModes      = empty($this->data['modes'] ?? null);
+        $needsGenres     = empty($this->data['genres'] ?? null);
+        $needsPlatforms  = empty($this->data['platforms'] ?? null);
+        $needsSeries     = empty($this->data['series'] ?? null);
+
+        // Determine if we should prefetch HTML (and optionally wikitext) now
+        $needsWpDesc     = isset($wikipage) && empty($wikipage->description);
+        $needsWpWikitext = isset($wikipage) && empty($wikipage->wikitext);
+
+        if ($title) {
             try {
                 $pageId = $this->data['page_id'] ?? null;
-                if ($html === null) { $html = $this->fetchInfoboxHtml($title, $pageId); }
+
+                $needHtmlForData = ($needsEngines || $needsModes || $needsGenres || $needsPlatforms || $needsSeries || $needsRelease || $needsCover || $needsDevelopers || $needsPublishers);
+                $prefetchedWikitext = null;
+
+                if ($needHtmlForData) {
+                    // Fetch parse HTML once; include wikitext too if page meta is missing to avoid second call later
+                    $props = ['text'];
+                    if ($needsWpDesc || $needsWpWikitext) { $props[] = 'wikitext'; }
+                    $parsedPage = $this->fetchParse($title, $pageId, $props);
+                    if (($parsedPage['text'] ?? null) && $html === null) { $html = $parsedPage['text']; }
+                    if (array_key_exists('wikitext', $parsedPage)) { $prefetchedWikitext = $parsedPage['wikitext']; }
+
+                    // Fallback: if combined parse returned nothing for text, try legacy fetch
+                    if ($html === null) { $html = $this->fetchInfoboxHtml($title, $pageId); }
+                }
+
                 if ($html) {
                     $parsed = $this->parseInfoboxTaxonomies($html);
                     foreach (['developers','publishers','engines','modes','genres','platforms','series'] as $key) {
@@ -158,8 +133,34 @@ class SaveGameDataJob implements ShouldQueue
                         $this->data['cover_url'] = $parsed['cover_url'];
                     }
                 }
+
+                // Cargo fallback only if core fields still missing after HTML parse
+                $needsDevelopers = empty($this->data['developers'] ?? null);
+                $needsPublishers = empty($this->data['publishers'] ?? null) && empty($this->data['publisher'] ?? null);
+                $needsRelease    = empty($this->data['release_date'] ?? null);
+                $needsCover      = empty($this->data['cover_url'] ?? null);
+
+                if ($needsDevelopers || $needsPublishers || $needsRelease || $needsCover) {
+                    $fetched = $this->fetchInfoboxData($title, $pageId);
+                    foreach ([
+                        'developers'   => 'developers',
+                        'publishers'   => 'publishers',
+                        'release_date' => 'release_date',
+                        'cover_url'    => 'cover_url',
+                    ] as $src => $dst) {
+                        if (($this->data[$dst] ?? null) === null && ($fetched[$src] ?? null) !== null) {
+                            $this->data[$dst] = $fetched[$src];
+                        }
+                    }
+                    if (($this->data['publishers'] ?? null) === null && ($fetched['publisher'] ?? null) !== null) {
+                        $this->data['publishers'] = $fetched['publisher'];
+                    }
+                }
+
+                // If we prefetched wikitext earlier, keep it for later wikipage enrichment
+                if (!empty($prefetchedWikitext)) { $wikitext = $prefetchedWikitext; }
             } catch (\Throwable $e) {
-                Log::warning('PCGW SaveGameDataJob: infobox HTML parse failed', [
+                Log::warning('PCGW SaveGameDataJob: data enrichment failed', [
                     'title' => $title,
                     'error' => $e->getMessage(),
                 ]);
@@ -249,6 +250,45 @@ class SaveGameDataJob implements ShouldQueue
             $this->upsertPivot('pcgw_game_game_series', [
                 'game_id' => $game->id,
                 'series_id' => $series->id,
+            ]);
+        }
+
+        // 6) Enrich wikipage description and wikitext now (after gating), using any prefetched content
+        try {
+            if ($wikipage) {
+                $wpDirty = false;
+                $pageIdLocal = $this->data['page_id'] ?? null;
+
+                if (empty($wikipage->description)) {
+                    if ($html === null) {
+                        $parsedPage = $this->fetchParse($title, $pageIdLocal, ['text']);
+                        if (($parsedPage['text'] ?? null)) { $html = $parsedPage['text']; }
+                        if ($html === null) { $html = $this->fetchInfoboxHtml($title, $pageIdLocal); }
+                    }
+                    if ($html) {
+                        $desc = $this->parseLeadFromHtml($html);
+                        if ($desc) { $wikipage->description = $desc; $wpDirty = true; }
+                    }
+                }
+
+                if (empty($wikipage->wikitext)) {
+                    if ($wikitext === null) {
+                        $parsedPage = $this->fetchParse($title, $pageIdLocal, ['wikitext']);
+                        if (!empty($parsedPage['wikitext'] ?? null)) {
+                            $wikitext = $parsedPage['wikitext'];
+                        } else {
+                            $wikitext = $this->fetchWikitext($title, $pageIdLocal);
+                        }
+                    }
+                    if (!empty($wikitext)) { $wikipage->wikitext = $wikitext; $wpDirty = true; }
+                }
+
+                if ($wpDirty) { $wikipage->save(); }
+            }
+        } catch (\Throwable $e) {
+            Log::warning('PCGW SaveGameDataJob: failed to enrich wikipage meta (post-gating)', [
+                'title' => $title,
+                'error' => $e->getMessage(),
             ]);
         }
     }
@@ -482,6 +522,51 @@ class SaveGameDataJob implements ShouldQueue
     }
 
     /**
+     * Fetch MediaWiki parse for multiple props in a single request.
+     * Returns array keys that may include 'text' and 'wikitext'.
+     */
+    protected function fetchParse(string $pageTitle, ?int $pageId = null, array $props = ['text']): array
+    {
+        $apiUrl = config('pcgamingwiki.api_url', 'https://www.pcgamingwiki.com/w/api.php');
+
+        $params = [
+            'action' => 'parse',
+            'prop' => implode('|', $props),
+            'format' => config('pcgamingwiki.format', 'json'),
+            'formatversion' => 2,
+        ];
+        if ($pageId) {
+            $params['pageid'] = (int) $pageId;
+        } else {
+            $params['page'] = $pageTitle;
+        }
+
+        $resp = Http::timeout(30)->get($apiUrl, $params);
+        if (! $resp->ok()) {
+            Log::warning('PCGW parse API (combined) failed', [
+                'status' => $resp->status(),
+                'body' => $resp->body(),
+                'title' => $pageTitle,
+                'page_id' => $pageId,
+                'props' => $props,
+            ]);
+            return [];
+        }
+
+        $json = $resp->json();
+        $out = [];
+        // formatversion=2 returns strings
+        if (isset($json['parse']['text'])) {
+            $out['text'] = is_array($json['parse']['text']) ? ($json['parse']['text']['*'] ?? null) : $json['parse']['text'];
+        }
+        if (isset($json['parse']['wikitext'])) {
+            $wt = is_array($json['parse']['wikitext']) ? ($json['parse']['wikitext']['*'] ?? null) : $json['parse']['wikitext'];
+            if (is_string($wt)) { $out['wikitext'] = $wt; }
+        }
+        return $out;
+    }
+
+    /**
      * Extract lead paragraph (plain text) from full page HTML.
      */
     protected function parseLeadFromHtml(string $html): ?string
@@ -581,6 +666,17 @@ class SaveGameDataJob implements ShouldQueue
                 }
             }
 
+            // Row-local label detection: sometimes Series/Franchise is provided as a row label instead of a header
+            $labelTdAny = $xpath->query('.//td[contains(@class, "template-infobox-type")]', $tr)->item(0);
+            if ($labelTdAny) {
+                $labelAny = strtolower($this->normalizeText($labelTdAny->textContent));
+                if ($labelAny !== '') {
+                    if (strpos($labelAny, 'series') !== false || strpos($labelAny, 'franchise') !== false) {
+                        $result['series'] = array_merge($result['series'], $texts);
+                    }
+                }
+            }
+
             if (! $currentHeader) { continue; }
             $header = strtolower($this->normalizeText($currentHeader));
 
@@ -590,7 +686,7 @@ class SaveGameDataJob implements ShouldQueue
                 $result['publishers'] = array_merge($result['publishers'], $texts);
             } elseif (strpos($header, 'engine') !== false) {
                 $result['engines'] = array_merge($result['engines'], $texts);
-            } elseif (strpos($header, 'series') !== false) {
+            } elseif (strpos($header, 'series') !== false || strpos($header, 'franchise') !== false) {
                 $result['series'] = array_merge($result['series'], $texts);
             } elseif (strpos($header, 'taxonomy') !== false) {
                 // Under Taxonomy, the first TD is the label like Modes/Genres
@@ -601,6 +697,8 @@ class SaveGameDataJob implements ShouldQueue
                         $result['modes'] = array_merge($result['modes'], $texts);
                     } elseif (strpos($label, 'genre') !== false) {
                         $result['genres'] = array_merge($result['genres'], $texts);
+                    } elseif (strpos($label, 'series') !== false || strpos($label, 'franchise') !== false) {
+                        $result['series'] = array_merge($result['series'], $texts);
                     }
                 }
             }

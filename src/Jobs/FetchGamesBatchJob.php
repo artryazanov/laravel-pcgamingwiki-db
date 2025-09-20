@@ -9,9 +9,9 @@ use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
-class FetchGamesBatchJob implements ShouldQueue
+class FetchGamesBatchJob extends AbstractPCGamingWikiJob implements ShouldQueue
 {
-    use Dispatchable, Queueable, SerializesModels;
+    // Traits are provided by the abstract base
 
     public int $limit;
     public ?string $apcontinue;

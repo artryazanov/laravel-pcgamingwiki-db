@@ -30,4 +30,15 @@ return [
     |
     */
     'limit' => 50,
+
+    /*
+    |--------------------------------------------------------------------------
+    | Throttle between API requests (milliseconds)
+    |--------------------------------------------------------------------------
+    |
+    | Global delay used by PCGamingWiki jobs to avoid hammering the API.
+    | Set via env PCGW_THROTTLE_MS. Defaults to 1000 ms (1s).
+    |
+    */
+    'throttle_milliseconds' => (int) env('PCGW_THROTTLE_MS', 1000),
 ];
