@@ -14,35 +14,32 @@ class FetchGamesBatchJobTest extends TestCase
     {
         Bus::fake();
 
-        // Fake API with two entries
+        // Fake API with two entries and continuation token
         Http::fake([
             'https://www.pcgamingwiki.com/w/api.php*' => Http::response([
-                'cargoquery' => [
-                    [
-                        'title' => [
-                            'Page' => 'Foo Game',
-                            'PageID' => 1,
-                            'Developers' => 'Dev1',
-                            'Publisher' => 'Pub1',
-                            'Released' => '2020-01-01',
-                            'Cover_URL' => 'File:FooCover.png',
+                'batchcomplete' => true,
+                'continue' => [
+                    'apcontinue' => '007_Legends',
+                    'continue' => '-||',
+                ],
+                'query' => [
+                    'allpages' => [
+                        [
+                            'pageid' => 1,
+                            'ns' => 0,
+                            'title' => 'Foo Game',
                         ],
-                    ],
-                    [
-                        'title' => [
-                            'Page' => 'Bar Game',
-                            'PageID' => 2,
-                            'Developers' => 'Dev2',
-                            'Publisher' => 'Pub2',
-                            'Released' => '2019',
-                            'Cover_URL' => 'https://example.com/bar.jpg',
+                        [
+                            'pageid' => 2,
+                            'ns' => 0,
+                            'title' => 'Bar Game',
                         ],
                     ],
                 ],
             ], 200),
         ]);
 
-        $job = new FetchGamesBatchJob(2, 0);
+        $job = new FetchGamesBatchJob(2, null);
         $job->handle();
 
         // Two SaveGameDataJob dispatched with correct payloads
@@ -54,9 +51,9 @@ class FetchGamesBatchJobTest extends TestCase
             return ($job->data['title'] ?? null) === 'Bar Game';
         });
 
-        // Next batch dispatched with offset incremented by results count
+        // Next batch dispatched with same limit and apcontinue token
         Bus::assertDispatched(FetchGamesBatchJob::class, function (FetchGamesBatchJob $job) {
-            return $job->limit === 2 && $job->offset === 2;
+            return $job->limit === 2 && $job->apcontinue === '007_Legends';
         });
     }
 
@@ -66,16 +63,17 @@ class FetchGamesBatchJobTest extends TestCase
 
         Http::fake([
             'https://www.pcgamingwiki.com/w/api.php*' => Http::response([
-                'cargoquery' => [],
+                'batchcomplete' => true,
+                'query' => [
+                    'allpages' => [],
+                ],
             ], 200),
         ]);
 
-        (new FetchGamesBatchJob(3, 9))->handle();
+        (new FetchGamesBatchJob(3, null))->handle();
 
         Bus::assertNotDispatched(SaveGameDataJob::class);
         // Should not chain next batch
-        Bus::assertNotDispatched(FetchGamesBatchJob::class, function (FetchGamesBatchJob $job) {
-            return $job->offset !== 9;
-        });
+        Bus::assertNotDispatched(FetchGamesBatchJob::class);
     }
 }

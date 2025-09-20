@@ -14,15 +14,15 @@ class FetchGamesBatchJob implements ShouldQueue
     use Dispatchable, Queueable, SerializesModels;
 
     public int $limit;
-    public int $offset;
+    public ?string $apcontinue;
 
     /**
      * Create a new job instance.
      */
-    public function __construct(int $limit, int $offset = 0)
+    public function __construct(int $limit, ?string $apcontinue = null)
     {
         $this->limit = max(1, $limit);
-        $this->offset = max(0, $offset);
+        $this->apcontinue = $apcontinue ?: null;
     }
 
     /**
@@ -32,32 +32,26 @@ class FetchGamesBatchJob implements ShouldQueue
     {
         $apiUrl = config('pcgamingwiki.api_url');
 
-        // Cargo table and fields to request (keep in sync with command expectations)
-        $fields = implode(',', [
-            'Infobox_game._pageName=Page',
-            'Infobox_game._pageID=PageID',
-            'Infobox_game.Developers',
-            'Infobox_game.Publisher',
-            'Infobox_game.Released',
-            'Infobox_game.Cover_URL',
-        ]);
+        Log::info('PCGamingWiki FetchGamesBatchJob: fetching', ['apcontinue' => $this->apcontinue, 'limit' => $this->limit]);
 
-        Log::info('PCGamingWiki FetchGamesBatchJob: fetching', ['offset' => $this->offset, 'limit' => $this->limit]);
-
-        $response = Http::timeout(30)->get($apiUrl, [
-            'action' => 'cargoquery',
-            'tables' => 'Infobox_game',
-            'fields' => $fields,
-            'limit' => $this->limit,
-            'offset' => $this->offset,
+        $params = [
+            'action' => 'query',
+            'list' => 'allpages',
+            'aplimit' => $this->limit,
+            'apnamespace' => '0', // main/article namespace only
             'format' => config('pcgamingwiki.format', 'json'),
-        ]);
+        ];
+        if ($this->apcontinue) {
+            $params['apcontinue'] = $this->apcontinue;
+        }
+
+        $response = Http::timeout(30)->get($apiUrl, $params);
 
         if (! $response->ok()) {
             Log::error('PCGamingWiki API request failed', [
                 'status' => $response->status(),
                 'body' => $response->body(),
-                'offset' => $this->offset,
+                'apcontinue' => $this->apcontinue,
                 'limit' => $this->limit,
             ]);
             return; // Fail softly; the queue can retry if configured
@@ -70,35 +64,28 @@ class FetchGamesBatchJob implements ShouldQueue
             return;
         }
 
-        $results = $data['cargoquery'] ?? [];
+        $pages = $data['query']['allpages'] ?? [];
 
-        if (empty($results)) {
-            Log::info('PCGamingWiki FetchGamesBatchJob: no more records to process', ['offset' => $this->offset]);
+        if (empty($pages)) {
+            Log::info('PCGamingWiki FetchGamesBatchJob: no more records to process', ['apcontinue' => $this->apcontinue]);
             return;
         }
 
         $dispatched = 0;
-        foreach ($results as $entry) {
-            $titleBlock = $entry['title'] ?? [];
-            $rowFields = $entry['title'] ?? [];
-
-            $pageName = $titleBlock['Page'] ?? null;
-            $pageID = $titleBlock['PageID'] ?? null;
+        foreach ($pages as $p) {
+            $title = $p['title'] ?? null;
+            $pageID = $p['pageid'] ?? null;
 
             // Build the canonical PCGamingWiki page URL from page title
             $pcgwUrl = null;
-            if ($pageName) {
-                $pcgwUrl = 'https://www.pcgamingwiki.com/wiki/' . rawurlencode(str_replace(' ', '_', $pageName));
+            if ($title) {
+                $pcgwUrl = 'https://www.pcgamingwiki.com/wiki/' . rawurlencode(str_replace(' ', '_', $title));
             }
 
             $gameData = [
-                'page_name'    => $pageName,
+                'page_name'    => $title,
                 'page_id'      => $pageID,
-                'title'        => $pageName,
-                'developers'   => $rowFields['Developers'] ?? null,
-                'publishers'   => $rowFields['Publisher'] ?? null,
-                'release_date' => $rowFields['Released'] ?? null,
-                'cover_url'    => $rowFields['Cover_URL'] ?? null,
+                'title'        => $title,
                 'pcgw_url'     => $pcgwUrl,
             ];
 
@@ -108,11 +95,13 @@ class FetchGamesBatchJob implements ShouldQueue
 
         Log::info('PCGamingWiki FetchGamesBatchJob: dispatched SaveGameDataJob jobs', [
             'count' => $dispatched,
-            'from_offset' => $this->offset,
+            'from_apcontinue' => $this->apcontinue,
         ]);
 
-        // Chain next batch while there are results
-        $nextOffset = $this->offset + count($results);
-        FetchGamesBatchJob::dispatch($this->limit, $nextOffset);
+        // Chain next batch while API provides continuation token
+        $nextToken = $data['continue']['apcontinue'] ?? null;
+        if ($nextToken) {
+            FetchGamesBatchJob::dispatch($this->limit, $nextToken);
+        }
     }
 }

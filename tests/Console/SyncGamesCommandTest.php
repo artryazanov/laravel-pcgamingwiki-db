@@ -14,11 +14,11 @@ class SyncGamesCommandTest extends TestCase
 
         $this->artisan('pcgamingwiki:sync-games', [
             '--limit' => 10,
-            '--offset' => 5,
+            '--apcontinue' => 'ABC',
         ])->assertSuccessful();
 
         Bus::assertDispatched(FetchGamesBatchJob::class, function (FetchGamesBatchJob $job) {
-            return $job->limit === 10 && $job->offset === 5;
+            return $job->limit === 10 && $job->apcontinue === 'ABC';
         });
     }
 
@@ -33,7 +33,7 @@ class SyncGamesCommandTest extends TestCase
             ->assertSuccessful();
 
         Bus::assertDispatched(FetchGamesBatchJob::class, function (FetchGamesBatchJob $job) {
-            return $job->limit === 7 && $job->offset === 0;
+            return $job->limit === 7 && $job->apcontinue === null;
         });
     }
 }
