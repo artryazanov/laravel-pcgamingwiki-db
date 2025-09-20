@@ -1,0 +1,44 @@
+{
+    "name": "artryazanov/laravel-pcgamingwiki-db",
+    "description": "A Laravel package to sync game data from PCGamingWiki using its MediaWiki API.",
+    "type": "library",
+    "license": "Unlicense",
+    "require": {
+        "php": "^8.0",
+        "illuminate/support": "^10.0",
+        "illuminate/console": "^10.0",
+        "illuminate/database": "^10.0",
+        "illuminate/queue": "^10.0",
+        "guzzlehttp/guzzle": "^7.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "Artryazanov\\PCGamingWiki\\": "src/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Artryazanov\\PCGamingWiki\\PCGamingWikiServiceProvider"
+            ]
+        }
+    },
+    "scripts": {
+        "test": "vendor/bin/phpunit"
+    },
+    "require-dev": {
+        "orchestra/testbench": "^8.0|^9.0|^10.0",
+        "phpunit/phpunit": "^10.5|^11.0",
+        "laravel/pint": "^1.24"
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Tests\\": "tests/"
+        }
+    },
+    "config": {
+        "sort-packages": true
+    },
+    "minimum-stability": "dev",
+    "prefer-stable": true
+}
