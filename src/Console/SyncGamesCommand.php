@@ -1,9 +1,9 @@
 <?php
 
-namespace Artryazanov\PCGamingWiki\Console\Commands;
+namespace Artryazanov\PCGamingWiki\Console;
 
-use Illuminate\Console\Command;
 use Artryazanov\PCGamingWiki\Jobs\FetchGamesBatchJob;
+use Illuminate\Console\Command;
 
 class SyncGamesCommand extends Command
 {

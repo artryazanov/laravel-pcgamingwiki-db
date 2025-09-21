@@ -9,7 +9,6 @@ use Artryazanov\PCGamingWiki\Models\Mode;
 use Artryazanov\PCGamingWiki\Models\Platform;
 use Artryazanov\PCGamingWiki\Models\Series;
 use Artryazanov\PCGamingWiki\Models\Game;
-use Artryazanov\PCGamingWiki\Models\Wikipage;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -44,44 +43,19 @@ class SaveGameDataJob extends AbstractPCGamingWikiJob implements ShouldQueue
      */
     public function handle(): void
     {
-        // 1) Upsert central wikipage (if URL or title provided)
-        $wikipageId = null;
-        $wikipage = null;
+        // 1) Prepare basic identifiers
         $title = $this->data['title'] ?? $this->data['page_name'] ?? null;
         $pcgwUrl = $this->data['pcgw_url'] ?? null;
         $html = null; // will reuse if fetched
         $wikitext = null; // will reuse if fetched
-        if ($title || $pcgwUrl) {
-            $wikipage = Wikipage::query()
-                ->when($pcgwUrl, fn($q) => $q->where('pcgw_url', $pcgwUrl))
-                ->when(! $pcgwUrl && $title, fn($q) => $q->where('title', $title))
-                ->first();
 
-            if (! $wikipage) {
-                $wikipage = new Wikipage([
-                    'title' => $title,
-                    'pcgw_url' => $pcgwUrl,
-                ]);
-                $wikipage->save();
-            } else {
-                // Fill missing values only
-                $dirty = false;
-                if ($title && ! $wikipage->title) { $wikipage->title = $title; $dirty = true; }
-                if ($pcgwUrl && ! $wikipage->pcgw_url) { $wikipage->pcgw_url = $pcgwUrl; $dirty = true; }
-                if ($dirty) { $wikipage->save(); }
-            }
-
-            // Delay wikipage description/wikitext enrichment until after gating succeeds to avoid unnecessary requests
-            // We will still reuse any HTML/Wikitext fetched later for data parsing.
-            $pageId = $this->data['page_id'] ?? null;
-
-            $wikipageId = $wikipage->id;
-        }
-
-        // If we couldn't determine a central page, we cannot persist a game row without legacy keys
-        if (! $wikipageId) {
+        // If we couldn't determine a page URL or title, skip
+        if (! $title && ! $pcgwUrl) {
             return;
         }
+
+        // We will enrich other fields below as needed.
+        $pageId = $this->data['page_id'] ?? null;
 
         // 1.5) Determine enrichment needs and prefer HTML parse first; use Cargo only as fallback
         $needsDevelopers = empty($this->data['developers'] ?? null);
@@ -95,9 +69,7 @@ class SaveGameDataJob extends AbstractPCGamingWikiJob implements ShouldQueue
         $needsPlatforms  = empty($this->data['platforms'] ?? null);
         $needsSeries     = empty($this->data['series'] ?? null);
 
-        // Determine if we should prefetch HTML (and optionally wikitext) now
-        $needsWpDesc     = isset($wikipage) && empty($wikipage->description);
-        $needsWpWikitext = isset($wikipage) && empty($wikipage->wikitext);
+        // Determine if we should prefetch HTML now (no wikipage meta anymore)
 
         if ($title) {
             try {
@@ -107,12 +79,10 @@ class SaveGameDataJob extends AbstractPCGamingWikiJob implements ShouldQueue
                 $prefetchedWikitext = null;
 
                 if ($needHtmlForData) {
-                    // Fetch parse HTML once; include wikitext too if page meta is missing to avoid second call later
+                    // Fetch parse HTML once
                     $props = ['text'];
-                    if ($needsWpDesc || $needsWpWikitext) { $props[] = 'wikitext'; }
                     $parsedPage = $this->fetchParse($title, $pageId, $props);
                     if (($parsedPage['text'] ?? null) && $html === null) { $html = $parsedPage['text']; }
-                    if (array_key_exists('wikitext', $parsedPage)) { $prefetchedWikitext = $parsedPage['wikitext']; }
 
                     // Fallback: if combined parse returned nothing for text, try legacy fetch
                     if ($html === null) { $html = $this->fetchInfoboxHtml($title, $pageId); }
@@ -184,14 +154,16 @@ class SaveGameDataJob extends AbstractPCGamingWikiJob implements ShouldQueue
         $releaseDate = $this->data['release_date'] ?? null;
         $releaseYear = $this->extractYear($releaseDate);
 
+        $unique = $pcgwUrl ? ['pcgw_url' => $pcgwUrl] : ['title' => $title];
         $game = Game::updateOrCreate(
-            ['wikipage_id' => $wikipageId],
+            $unique,
             [
+                'title'         => $title,
+                'pcgw_url'      => $pcgwUrl,
                 'clean_title'   => $cleanTitle,
                 'release_date'  => $releaseDate,
                 'release_year'  => $releaseYear,
                 'cover_url'     => $this->normalizeCoverUrl($this->data['cover_url'] ?? null),
-                'wikipage_id'   => $wikipageId,
             ]
         );
 
@@ -253,44 +225,6 @@ class SaveGameDataJob extends AbstractPCGamingWikiJob implements ShouldQueue
             ]);
         }
 
-        // 6) Enrich wikipage description and wikitext now (after gating), using any prefetched content
-        try {
-            if ($wikipage) {
-                $wpDirty = false;
-                $pageIdLocal = $this->data['page_id'] ?? null;
-
-                if (empty($wikipage->description)) {
-                    if ($html === null) {
-                        $parsedPage = $this->fetchParse($title, $pageIdLocal, ['text']);
-                        if (($parsedPage['text'] ?? null)) { $html = $parsedPage['text']; }
-                        if ($html === null) { $html = $this->fetchInfoboxHtml($title, $pageIdLocal); }
-                    }
-                    if ($html) {
-                        $desc = $this->parseLeadFromHtml($html);
-                        if ($desc) { $wikipage->description = $desc; $wpDirty = true; }
-                    }
-                }
-
-                if (empty($wikipage->wikitext)) {
-                    if ($wikitext === null) {
-                        $parsedPage = $this->fetchParse($title, $pageIdLocal, ['wikitext']);
-                        if (!empty($parsedPage['wikitext'] ?? null)) {
-                            $wikitext = $parsedPage['wikitext'];
-                        } else {
-                            $wikitext = $this->fetchWikitext($title, $pageIdLocal);
-                        }
-                    }
-                    if (!empty($wikitext)) { $wikipage->wikitext = $wikitext; $wpDirty = true; }
-                }
-
-                if ($wpDirty) { $wikipage->save(); }
-            }
-        } catch (\Throwable $e) {
-            Log::warning('PCGW SaveGameDataJob: failed to enrich wikipage meta (post-gating)', [
-                'title' => $title,
-                'error' => $e->getMessage(),
-            ]);
-        }
     }
 
     /**

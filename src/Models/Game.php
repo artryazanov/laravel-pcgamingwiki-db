@@ -2,10 +2,38 @@
 
 namespace Artryazanov\PCGamingWiki\Models;
 
+use Carbon\CarbonInterface;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
+/**
+ * Artryazanov\\PCGamingWiki\\Models\\Game
+ *
+ * @property int $id
+ * @property string|null $title Game title from PCGamingWiki
+ * @property string|null $pcgw_url Canonical URL to the PCGamingWiki page
+ * @property string|null $clean_title Normalized game title without disambiguation
+ * @property string|null $cover_url URL of the cover image on PCGamingWiki
+ * @property string|null $release_date First known release date (raw value)
+ * @property int|null $release_year First 4-digit release year parsed
+ * @property CarbonInterface|null $created_at
+ * @property CarbonInterface|null $updated_at
+ *
+ * @property-read Collection<int, Genre> $genres
+ * @property-read Collection<int, Platform> $platforms
+ * @property-read Collection<int, Mode> $modes
+ * @property-read Collection<int, Series> $series
+ * @property-read Collection<int, Engine> $engines
+ * @property-read Collection<int, Company> $companies
+ * @property-read Collection<int, Company> $developersCompanies
+ * @property-read Collection<int, Company> $publishersCompanies
+ *
+ * @method static Builder|Game newModelQuery()
+ * @method static Builder|Game newQuery()
+ * @method static Builder|Game query()
+ */
 class Game extends Model
 {
     /**
@@ -17,29 +45,19 @@ class Game extends Model
      * The attributes that are mass assignable.
      */
     protected $fillable = [
+        'title',
+        'pcgw_url',
         'clean_title',
         'release_date',
         'release_year',
         'cover_url',
-        'wikipage_id',
     ];
 
-    protected $appends = [
-        'title',
-        'pcgw_url',
-    ];
 
     protected $casts = [
         'release_year' => 'integer',
     ];
 
-    /**
-     * Related PCGamingWiki page meta.
-     */
-    public function wikipage(): BelongsTo
-    {
-        return $this->belongsTo(Wikipage::class);
-    }
 
     /**
      * Genres relation (many-to-many via pivot).
@@ -105,19 +123,4 @@ class Game extends Model
         return $this->belongsToMany(Company::class, 'pcgw_game_game_company')->wherePivot('role', 'publisher');
     }
 
-    /**
-     * Accessor: proxy title to related wikipage->title
-     */
-    public function getTitleAttribute(): ?string
-    {
-        return $this->wikipage?->title;
-    }
-
-    /**
-     * Accessor: proxy pcgw_url to related wikipage->pcgw_url
-     */
-    public function getPcgwUrlAttribute(): ?string
-    {
-        return $this->wikipage?->pcgw_url;
-    }
 }

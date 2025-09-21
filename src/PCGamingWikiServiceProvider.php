@@ -2,8 +2,8 @@
 
 namespace Artryazanov\PCGamingWiki;
 
+use Artryazanov\PCGamingWiki\Console\SyncGamesCommand;
 use Illuminate\Support\ServiceProvider;
-use Artryazanov\PCGamingWiki\Console\Commands\SyncGamesCommand;
 
 class PCGamingWikiServiceProvider extends ServiceProvider
 {

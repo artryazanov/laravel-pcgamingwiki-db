@@ -5,7 +5,6 @@ namespace Tests\Jobs;
 use Artryazanov\PCGamingWiki\Jobs\SaveGameDataJob;
 use Artryazanov\PCGamingWiki\Models\Company;
 use Artryazanov\PCGamingWiki\Models\Game;
-use Artryazanov\PCGamingWiki\Models\Wikipage;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
@@ -41,13 +40,11 @@ class SaveGameDataJobFetchFromApiTest extends TestCase
 
         (new SaveGameDataJob($payload))->handle();
 
-        // Wikipage created
-        $wikipage = Wikipage::query()->where('pcgw_url', $pcgwUrl)->first();
-        $this->assertNotNull($wikipage);
-        $this->assertSame($title, $wikipage->title);
-
-        // Game created and linked with enriched data
-        $game = Game::query()->where('wikipage_id', $wikipage->id)->first();
+        // Game created with enriched data
+        $game = Game::query()->where('pcgw_url', $pcgwUrl)->first();
+        $this->assertNotNull($game);
+        $this->assertSame($title, $game->title);
+        $this->assertSame($pcgwUrl, $game->pcgw_url);
         $this->assertNotNull($game);
         $this->assertSame('The Test Game', $game->clean_title);
         $this->assertSame(2017, $game->release_year);

@@ -10,8 +10,8 @@ class MigrationsCreateTablesTest extends TestCase
     public function test_tables_are_created_and_legacy_columns_absent(): void
     {
         // Core
-        $this->assertTrue(Schema::hasTable('pcgw_game_wikipages'));
         $this->assertTrue(Schema::hasTable('pcgw_games'));
+        $this->assertFalse(Schema::hasTable('pcgw_game_wikipages'));
 
         // Taxonomies
         $this->assertTrue(Schema::hasTable('pcgw_game_companies'));
@@ -29,10 +29,11 @@ class MigrationsCreateTablesTest extends TestCase
         $this->assertTrue(Schema::hasTable('pcgw_game_game_series'));
         $this->assertTrue(Schema::hasTable('pcgw_game_game_engine'));
 
-        // Legacy columns were removed from pcgw_games
+        // Columns state on pcgw_games
         $this->assertFalse(Schema::hasColumn('pcgw_games', 'page_name'));
         $this->assertFalse(Schema::hasColumn('pcgw_games', 'page_id'));
-        $this->assertFalse(Schema::hasColumn('pcgw_games', 'title'));
+        $this->assertTrue(Schema::hasColumn('pcgw_games', 'title'));
+        $this->assertTrue(Schema::hasColumn('pcgw_games', 'pcgw_url'));
         $this->assertFalse(Schema::hasColumn('pcgw_games', 'developers'));
         $this->assertFalse(Schema::hasColumn('pcgw_games', 'publishers'));
     }

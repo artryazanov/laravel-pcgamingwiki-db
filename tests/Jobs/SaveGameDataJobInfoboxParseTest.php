@@ -7,7 +7,6 @@ use Artryazanov\PCGamingWiki\Models\Engine;
 use Artryazanov\PCGamingWiki\Models\Genre;
 use Artryazanov\PCGamingWiki\Models\Mode;
 use Artryazanov\PCGamingWiki\Models\Platform;
-use Artryazanov\PCGamingWiki\Models\Wikipage;
 use Artryazanov\PCGamingWiki\Models\Game;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
@@ -123,9 +122,7 @@ class SaveGameDataJobInfoboxParseTest extends TestCase
 
         (new SaveGameDataJob($payload))->handle();
 
-        $wikipage = Wikipage::query()->where('title', 'Oddmar')->first();
-        $this->assertNotNull($wikipage);
-        $game = Game::query()->where('wikipage_id', $wikipage->id)->first();
+        $game = Game::query()->where('title', 'Oddmar')->first();
         $this->assertNotNull($game);
 
         // Engines

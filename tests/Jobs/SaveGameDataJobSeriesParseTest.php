@@ -4,7 +4,6 @@ namespace Tests\Jobs;
 
 use Artryazanov\PCGamingWiki\Jobs\SaveGameDataJob;
 use Artryazanov\PCGamingWiki\Models\Series;
-use Artryazanov\PCGamingWiki\Models\Wikipage;
 use Artryazanov\PCGamingWiki\Models\Game;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
@@ -48,9 +47,7 @@ class SaveGameDataJobSeriesParseTest extends TestCase
 
         (new SaveGameDataJob($payload))->handle();
 
-        $wikipage = Wikipage::query()->where('pcgw_url', $pcgwUrl)->first();
-        $this->assertNotNull($wikipage);
-        $game = Game::query()->where('wikipage_id', $wikipage->id)->first();
+        $game = Game::query()->where('pcgw_url', $pcgwUrl)->first();
         $this->assertNotNull($game);
 
         // Series created and pivot linked
