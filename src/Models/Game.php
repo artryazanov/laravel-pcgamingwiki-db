@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
  * Artryazanov\\PCGamingWiki\\Models\\Game
@@ -118,5 +119,13 @@ class Game extends Model
     public function publishersCompanies(): BelongsToMany
     {
         return $this->belongsToMany(Company::class, 'pcgw_game_game_company')->wherePivot('role', 'publisher');
+    }
+
+    /**
+     * External links related to this game.
+     */
+    public function links(): HasMany
+    {
+        return $this->hasMany(GameLink::class, 'game_id');
     }
 }

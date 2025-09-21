@@ -48,6 +48,7 @@ class SaveGameDataJob extends AbstractPCGamingWikiJob implements ShouldQueue
         $pcgwUrl = $this->data['pcgw_url'] ?? null;
         $html = null; // will reuse if fetched
         $wikitext = null; // will reuse if fetched
+        $externalLinks = []; // parsed external links from infobox icons
 
         // If we couldn't determine a page URL or title, skip
         if (! $title && ! $pcgwUrl) {
@@ -94,6 +95,8 @@ class SaveGameDataJob extends AbstractPCGamingWikiJob implements ShouldQueue
 
                 if ($html) {
                     $parsed = $this->parseInfoboxTaxonomies($html);
+                    // Parse external links (icons) once for later persistence
+                    $externalLinks = $this->parseInfoboxExternalLinks($html);
                     foreach (['developers', 'publishers', 'engines', 'modes', 'genres', 'platforms', 'series'] as $key) {
                         if (empty($this->data[$key] ?? null) && ! empty($parsed[$key] ?? [])) {
                             $this->data[$key] = implode('; ', $parsed[$key]);
@@ -230,6 +233,18 @@ class SaveGameDataJob extends AbstractPCGamingWikiJob implements ShouldQueue
                 'game_id' => $game->id,
                 'series_id' => $series->id,
             ]);
+        }
+
+        // 6) Persist external links parsed from infobox icons
+        if (!empty($externalLinks)) {
+            foreach ($externalLinks as $link) {
+                $site = $link['site'] ?? null;
+                $url = $link['url'] ?? null;
+                $titleLink = $link['title'] ?? null;
+                if ($site && $url) {
+                    $this->upsertGameLink($game->id, $site, $titleLink, $url);
+                }
+            }
         }
 
     }
@@ -436,6 +451,8 @@ class SaveGameDataJob extends AbstractPCGamingWikiJob implements ShouldQueue
                 }
             }
 
+            // External links are handled by parseInfoboxExternalLinks()
+
             $th = $xpath->query('.//th[contains(@class, "template-infobox-header")]', $tr)->item(0);
             if ($th) {
                 $currentHeader = $this->normalizeText($th->textContent);
@@ -546,6 +563,84 @@ class SaveGameDataJob extends AbstractPCGamingWikiJob implements ShouldQueue
         }
 
         return $result;
+    }
+
+    /**
+     * Parse infobox icons block to extract external links
+     * Returns array of ['site' => string, 'title' => ?string, 'url' => string]
+     */
+    protected function parseInfoboxExternalLinks(string $html): array
+    {
+        $links = [];
+
+        $dom = new \DOMDocument;
+        libxml_use_internal_errors(true);
+        $loaded = $dom->loadHTML('<?xml encoding="utf-8" ?>'.$html);
+        libxml_clear_errors();
+        if (! $loaded) {
+            return $links;
+        }
+        $xpath = new \DOMXPath($dom);
+        $table = $xpath->query('//table[@id="infobox-game"]')->item(0);
+        if (! $table) {
+            return $links;
+        }
+        // Find the icons cell
+        $iconsCell = $xpath->query('.//td[contains(@class, "template-infobox-icons")]', $table)->item(0);
+        if (! $iconsCell) {
+            return $links;
+        }
+
+        foreach ($xpath->query('.//div[contains(@class, "template-infobox-icon")]', $iconsCell) as $div) {
+            /** @var \DOMElement $div */
+            $class = ' '.$div->getAttribute('class').' ';
+            $site = null;
+            // Some divs have both "template-infobox-icon" and a specific "infobox-<site>" class.
+            // We need to ignore the generic "infobox-icon" token and pick the specific one (e.g., infobox-igdb).
+            if (preg_match_all('/\\binfobox-([a-z0-9\-]+)\\b/i', $class, $mAll)) {
+                $candidates = $mAll[1];
+                for ($i = count($candidates) - 1; $i >= 0; $i--) {
+                    $cand = strtolower($candidates[$i]);
+                    if ($cand !== 'icon' && $cand !== 'icons') {
+                        $site = $cand;
+                        break;
+                    }
+                }
+            }
+            $a = $xpath->query('.//a[1]', $div)->item(0);
+            $href = $a && $a->hasAttribute('href') ? trim($a->getAttribute('href')) : null;
+            $title = null;
+            if ($div->hasAttribute('title')) {
+                $title = $this->normalizeText($div->getAttribute('title'));
+            } elseif ($a && $a->hasAttribute('title')) {
+                $title = $this->normalizeText($a->getAttribute('title'));
+            }
+
+            if ($site && $href) {
+                $links[$site] = [
+                    'site' => $site,
+                    'title' => $title ?: null,
+                    'url' => $href,
+                ];
+            }
+        }
+
+        // Return as list
+        return array_values($links);
+    }
+
+    /**
+     * Upsert a single external link for a game.
+     */
+    protected function upsertGameLink(int $gameId, string $site, ?string $title, string $url): void
+    {
+        DB::table('pcgw_game_links')->updateOrInsert([
+            'game_id' => $gameId,
+            'site' => $site,
+        ], [
+            'title' => $title,
+            'url' => $url,
+        ]);
     }
 
     /**
