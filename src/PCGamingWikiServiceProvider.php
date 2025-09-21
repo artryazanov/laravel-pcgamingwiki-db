@@ -13,7 +13,7 @@ class PCGamingWikiServiceProvider extends ServiceProvider
     public function register(): void
     {
         // Merge package configuration
-        $this->mergeConfigFrom(__DIR__ . '/../config/pcgamingwiki.php', 'pcgamingwiki');
+        $this->mergeConfigFrom(__DIR__.'/../config/pcgamingwiki.php', 'pcgamingwiki');
     }
 
     /**
@@ -24,7 +24,7 @@ class PCGamingWikiServiceProvider extends ServiceProvider
         if ($this->app->runningInConsole()) {
             // Publish configuration file
             $this->publishes([
-                __DIR__ . '/../config/pcgamingwiki.php' => config_path('pcgamingwiki.php'),
+                __DIR__.'/../config/pcgamingwiki.php' => config_path('pcgamingwiki.php'),
             ], 'config');
 
             // Register the Artisan command
@@ -34,11 +34,11 @@ class PCGamingWikiServiceProvider extends ServiceProvider
 
             // Optionally publish migrations so the host app can copy them
             $this->publishes([
-                __DIR__ . '/../database/migrations' => database_path('migrations'),
+                __DIR__.'/../database/migrations' => database_path('migrations'),
             ], 'migrations');
         }
 
         // Auto-load migrations from the package so publishing is not required
-        $this->loadMigrationsFrom(__DIR__ . '/../database/migrations');
+        $this->loadMigrationsFrom(__DIR__.'/../database/migrations');
     }
 }

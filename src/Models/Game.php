@@ -20,7 +20,6 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
  * @property int|null $release_year First 4-digit release year parsed
  * @property CarbonInterface|null $created_at
  * @property CarbonInterface|null $updated_at
- *
  * @property-read Collection<int, Genre> $genres
  * @property-read Collection<int, Platform> $platforms
  * @property-read Collection<int, Mode> $modes
@@ -53,11 +52,9 @@ class Game extends Model
         'cover_url',
     ];
 
-
     protected $casts = [
         'release_year' => 'integer',
     ];
-
 
     /**
      * Genres relation (many-to-many via pivot).
@@ -122,5 +119,4 @@ class Game extends Model
     {
         return $this->belongsToMany(Company::class, 'pcgw_game_game_company')->wherePivot('role', 'publisher');
     }
-
 }

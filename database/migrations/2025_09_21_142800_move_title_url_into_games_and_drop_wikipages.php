@@ -49,7 +49,10 @@ return new class extends Migration
                     $table->dropConstrainedForeignId('wikipage_id');
                 } catch (\Throwable $e) {
                     if (Schema::hasColumn('pcgw_games', 'wikipage_id')) {
-                        try { $table->dropForeign(['wikipage_id']); } catch (\Throwable $e2) {}
+                        try {
+                            $table->dropForeign(['wikipage_id']);
+                        } catch (\Throwable $e2) {
+                        }
                         $table->dropColumn('wikipage_id');
                     }
                 }

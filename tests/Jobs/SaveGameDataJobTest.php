@@ -46,7 +46,7 @@ class SaveGameDataJobTest extends TestCase
         $this->assertTrue(Company::query()->where('name', 'Pub A')->exists());
 
         // Pivots with roles
-        $pivots = DB::table('pcgw_game_game_company')->get()->map(fn($r) => [
+        $pivots = DB::table('pcgw_game_game_company')->get()->map(fn ($r) => [
             'company_id' => $r->company_id,
             'role' => $r->role,
         ])->values();

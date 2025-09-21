@@ -2,10 +2,7 @@
 
 namespace Artryazanov\PCGamingWiki\Jobs;
 
-use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
-use Illuminate\Foundation\Bus\Dispatchable;
-use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -14,6 +11,7 @@ class FetchGamesBatchJob extends AbstractPCGamingWikiJob implements ShouldQueue
     // Traits are provided by the abstract base
 
     public int $limit;
+
     public ?string $apcontinue;
 
     /**
@@ -54,6 +52,7 @@ class FetchGamesBatchJob extends AbstractPCGamingWikiJob implements ShouldQueue
                 'apcontinue' => $this->apcontinue,
                 'limit' => $this->limit,
             ]);
+
             return; // Fail softly; the queue can retry if configured
         }
 
@@ -61,6 +60,7 @@ class FetchGamesBatchJob extends AbstractPCGamingWikiJob implements ShouldQueue
 
         if (isset($data['error'])) {
             Log::error('PCGamingWiki API error', $data['error']);
+
             return;
         }
 
@@ -68,6 +68,7 @@ class FetchGamesBatchJob extends AbstractPCGamingWikiJob implements ShouldQueue
 
         if (empty($pages)) {
             Log::info('PCGamingWiki FetchGamesBatchJob: no more records to process', ['apcontinue' => $this->apcontinue]);
+
             return;
         }
 
@@ -79,14 +80,14 @@ class FetchGamesBatchJob extends AbstractPCGamingWikiJob implements ShouldQueue
             // Build the canonical PCGamingWiki page URL from page title
             $pcgwUrl = null;
             if ($title) {
-                $pcgwUrl = 'https://www.pcgamingwiki.com/wiki/' . rawurlencode(str_replace(' ', '_', $title));
+                $pcgwUrl = 'https://www.pcgamingwiki.com/wiki/'.rawurlencode(str_replace(' ', '_', $title));
             }
 
             $gameData = [
-                'page_name'    => $title,
-                'page_id'      => $pageID,
-                'title'        => $title,
-                'pcgw_url'     => $pcgwUrl,
+                'page_name' => $title,
+                'page_id' => $pageID,
+                'title' => $title,
+                'pcgw_url' => $pcgwUrl,
             ];
 
             SaveGameDataJob::dispatch($gameData);

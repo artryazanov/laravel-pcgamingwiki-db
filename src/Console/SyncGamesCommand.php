@@ -29,7 +29,7 @@ class SyncGamesCommand extends Command
         // Queue the first batch job; it will chain subsequent batches until no results remain
         FetchGamesBatchJob::dispatch($limit, $apcontinue);
 
-        $this->info("Queued PCGamingWiki sync: first batch dispatched (limit={$limit}, apcontinue=" . ($apcontinue ?? 'null') . "). Ensure a queue worker is running.");
+        $this->info("Queued PCGamingWiki sync: first batch dispatched (limit={$limit}, apcontinue=".($apcontinue ?? 'null').'). Ensure a queue worker is running.');
 
         return self::SUCCESS;
     }

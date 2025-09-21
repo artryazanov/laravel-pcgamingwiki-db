@@ -2,8 +2,8 @@
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
-use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 /**
  * Consolidated migration for PCGamingWiki DB schema.
@@ -76,7 +76,10 @@ return new class extends Migration
                     if (Schema::hasColumn('pcgw_games', $col)) {
                         // For MySQL, attempt to drop unique index on page_name just in case
                         if ($col === 'page_name') {
-                            try { $table->dropUnique('pcgw_games_page_name_unique'); } catch (\Throwable $e) {}
+                            try {
+                                $table->dropUnique('pcgw_games_page_name_unique');
+                            } catch (\Throwable $e) {
+                            }
                         }
                         $table->dropColumn($col);
                     }
@@ -88,10 +91,10 @@ return new class extends Migration
         $taxonomies = [
             'pcgw_game_companies' => 'company',
             'pcgw_game_platforms' => 'platform',
-            'pcgw_game_genres'    => 'genre',
-            'pcgw_game_modes'     => 'mode',
-            'pcgw_game_series'    => 'series',
-            'pcgw_game_engines'   => 'engine',
+            'pcgw_game_genres' => 'genre',
+            'pcgw_game_modes' => 'mode',
+            'pcgw_game_series' => 'series',
+            'pcgw_game_engines' => 'engine',
         ];
 
         foreach ($taxonomies as $tableName => $label) {

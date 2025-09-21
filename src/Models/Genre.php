@@ -15,7 +15,6 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
  * @property string $name
  * @property CarbonInterface|null $created_at
  * @property CarbonInterface|null $updated_at
- *
  * @property-read Collection<int, Game> $games
  *
  * @method static Builder|Genre newModelQuery()
@@ -29,7 +28,6 @@ class Genre extends Model
     protected $fillable = [
         'name',
     ];
-
 
     public function games(): BelongsToMany
     {

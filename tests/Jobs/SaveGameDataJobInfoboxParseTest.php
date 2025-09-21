@@ -4,10 +4,10 @@ namespace Tests\Jobs;
 
 use Artryazanov\PCGamingWiki\Jobs\SaveGameDataJob;
 use Artryazanov\PCGamingWiki\Models\Engine;
+use Artryazanov\PCGamingWiki\Models\Game;
 use Artryazanov\PCGamingWiki\Models\Genre;
 use Artryazanov\PCGamingWiki\Models\Mode;
 use Artryazanov\PCGamingWiki\Models\Platform;
-use Artryazanov\PCGamingWiki\Models\Game;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;

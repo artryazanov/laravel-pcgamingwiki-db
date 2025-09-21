@@ -4,15 +4,12 @@ namespace Artryazanov\PCGamingWiki\Jobs;
 
 use Artryazanov\PCGamingWiki\Models\Company;
 use Artryazanov\PCGamingWiki\Models\Engine;
+use Artryazanov\PCGamingWiki\Models\Game;
 use Artryazanov\PCGamingWiki\Models\Genre;
 use Artryazanov\PCGamingWiki\Models\Mode;
 use Artryazanov\PCGamingWiki\Models\Platform;
 use Artryazanov\PCGamingWiki\Models\Series;
-use Artryazanov\PCGamingWiki\Models\Game;
-use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
-use Illuminate\Foundation\Bus\Dispatchable;
-use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -31,7 +28,7 @@ class SaveGameDataJob extends AbstractPCGamingWikiJob implements ShouldQueue
     /**
      * Create a new job instance.
      *
-     * @param array $data  Associative array of game data.
+     * @param  array  $data  Associative array of game data.
      */
     public function __construct(array $data)
     {
@@ -60,14 +57,14 @@ class SaveGameDataJob extends AbstractPCGamingWikiJob implements ShouldQueue
         // 1.5) Determine enrichment needs and prefer HTML parse first; use Cargo only as fallback
         $needsDevelopers = empty($this->data['developers'] ?? null);
         $needsPublishers = empty($this->data['publishers'] ?? null) && empty($this->data['publisher'] ?? null);
-        $needsRelease    = empty($this->data['release_date'] ?? null);
-        $needsCover      = empty($this->data['cover_url'] ?? null);
+        $needsRelease = empty($this->data['release_date'] ?? null);
+        $needsCover = empty($this->data['cover_url'] ?? null);
 
-        $needsEngines    = empty($this->data['engines'] ?? null);
-        $needsModes      = empty($this->data['modes'] ?? null);
-        $needsGenres     = empty($this->data['genres'] ?? null);
-        $needsPlatforms  = empty($this->data['platforms'] ?? null);
-        $needsSeries     = empty($this->data['series'] ?? null);
+        $needsEngines = empty($this->data['engines'] ?? null);
+        $needsModes = empty($this->data['modes'] ?? null);
+        $needsGenres = empty($this->data['genres'] ?? null);
+        $needsPlatforms = empty($this->data['platforms'] ?? null);
+        $needsSeries = empty($this->data['series'] ?? null);
 
         // Determine if we should prefetch HTML now (no wikipage meta anymore)
 
@@ -82,24 +79,28 @@ class SaveGameDataJob extends AbstractPCGamingWikiJob implements ShouldQueue
                     // Fetch parse HTML once
                     $props = ['text'];
                     $parsedPage = $this->fetchParse($title, $pageId, $props);
-                    if (($parsedPage['text'] ?? null) && $html === null) { $html = $parsedPage['text']; }
+                    if (($parsedPage['text'] ?? null) && $html === null) {
+                        $html = $parsedPage['text'];
+                    }
 
                     // Fallback: if combined parse returned nothing for text, try legacy fetch
-                    if ($html === null) { $html = $this->fetchInfoboxHtml($title, $pageId); }
+                    if ($html === null) {
+                        $html = $this->fetchInfoboxHtml($title, $pageId);
+                    }
                 }
 
                 if ($html) {
                     $parsed = $this->parseInfoboxTaxonomies($html);
-                    foreach (['developers','publishers','engines','modes','genres','platforms','series'] as $key) {
-                        if (empty($this->data[$key] ?? null) && !empty($parsed[$key] ?? [])) {
+                    foreach (['developers', 'publishers', 'engines', 'modes', 'genres', 'platforms', 'series'] as $key) {
+                        if (empty($this->data[$key] ?? null) && ! empty($parsed[$key] ?? [])) {
                             $this->data[$key] = implode('; ', $parsed[$key]);
                         }
                     }
                     // Fallbacks from HTML for release date and cover image
-                    if (empty($this->data['release_date'] ?? null) && !empty($parsed['release_dates'] ?? [])) {
+                    if (empty($this->data['release_date'] ?? null) && ! empty($parsed['release_dates'] ?? [])) {
                         $this->data['release_date'] = $parsed['release_dates'][0];
                     }
-                    if (empty($this->data['cover_url'] ?? null) && !empty($parsed['cover_url'] ?? null)) {
+                    if (empty($this->data['cover_url'] ?? null) && ! empty($parsed['cover_url'] ?? null)) {
                         $this->data['cover_url'] = $parsed['cover_url'];
                     }
                 }
@@ -107,16 +108,16 @@ class SaveGameDataJob extends AbstractPCGamingWikiJob implements ShouldQueue
                 // Cargo fallback only if core fields still missing after HTML parse
                 $needsDevelopers = empty($this->data['developers'] ?? null);
                 $needsPublishers = empty($this->data['publishers'] ?? null) && empty($this->data['publisher'] ?? null);
-                $needsRelease    = empty($this->data['release_date'] ?? null);
-                $needsCover      = empty($this->data['cover_url'] ?? null);
+                $needsRelease = empty($this->data['release_date'] ?? null);
+                $needsCover = empty($this->data['cover_url'] ?? null);
 
                 if ($needsDevelopers || $needsPublishers || $needsRelease || $needsCover) {
                     $fetched = $this->fetchInfoboxData($title, $pageId);
                     foreach ([
-                        'developers'   => 'developers',
-                        'publishers'   => 'publishers',
+                        'developers' => 'developers',
+                        'publishers' => 'publishers',
                         'release_date' => 'release_date',
-                        'cover_url'    => 'cover_url',
+                        'cover_url' => 'cover_url',
                     ] as $src => $dst) {
                         if (($this->data[$dst] ?? null) === null && ($fetched[$src] ?? null) !== null) {
                             $this->data[$dst] = $fetched[$src];
@@ -128,7 +129,9 @@ class SaveGameDataJob extends AbstractPCGamingWikiJob implements ShouldQueue
                 }
 
                 // If we prefetched wikitext earlier, keep it for later wikipage enrichment
-                if (!empty($prefetchedWikitext)) { $wikitext = $prefetchedWikitext; }
+                if (! empty($prefetchedWikitext)) {
+                    $wikitext = $prefetchedWikitext;
+                }
             } catch (\Throwable $e) {
                 Log::warning('PCGW SaveGameDataJob: data enrichment failed', [
                     'title' => $title,
@@ -138,7 +141,7 @@ class SaveGameDataJob extends AbstractPCGamingWikiJob implements ShouldQueue
         }
 
         // 2) Gate: only add to pcgw_games when release_date and (developers or publishers) exist
-        $hasRelease = !empty($this->data['release_date'] ?? null);
+        $hasRelease = ! empty($this->data['release_date'] ?? null);
         $hasDevOrPub = count($this->parseNames($this->data['developers'] ?? '')) > 0 || count($this->parseNames($this->data['publishers'] ?? '')) > 0;
         if (! $hasRelease || ! $hasDevOrPub) {
             Log::info('PCGW SaveGameDataJob: skipping game creation due to missing required fields', [
@@ -146,6 +149,7 @@ class SaveGameDataJob extends AbstractPCGamingWikiJob implements ShouldQueue
                 'has_release' => $hasRelease,
                 'has_companies' => $hasDevOrPub,
             ]);
+
             return;
         }
 
@@ -158,12 +162,12 @@ class SaveGameDataJob extends AbstractPCGamingWikiJob implements ShouldQueue
         $game = Game::updateOrCreate(
             $unique,
             [
-                'title'         => $title,
-                'pcgw_url'      => $pcgwUrl,
-                'clean_title'   => $cleanTitle,
-                'release_date'  => $releaseDate,
-                'release_year'  => $releaseYear,
-                'cover_url'     => $this->normalizeCoverUrl($this->data['cover_url'] ?? null),
+                'title' => $title,
+                'pcgw_url' => $pcgwUrl,
+                'clean_title' => $cleanTitle,
+                'release_date' => $releaseDate,
+                'release_year' => $releaseYear,
+                'cover_url' => $this->normalizeCoverUrl($this->data['cover_url'] ?? null),
             ]
         );
 
@@ -245,7 +249,8 @@ class SaveGameDataJob extends AbstractPCGamingWikiJob implements ShouldQueue
         // If the value looks like a MediaWiki file title, build a Special:FilePath link
         if (str_starts_with($cover, 'File:') || str_starts_with($cover, 'Image:')) {
             $encoded = rawurlencode($cover);
-            return 'https://www.pcgamingwiki.com/wiki/Special:FilePath/' . $encoded;
+
+            return 'https://www.pcgamingwiki.com/wiki/Special:FilePath/'.$encoded;
         }
 
         // Otherwise, return as-is
@@ -263,6 +268,7 @@ class SaveGameDataJob extends AbstractPCGamingWikiJob implements ShouldQueue
         // Remove content in parentheses and trailing/leading whitespace
         $clean = preg_replace('/\s*\([^)]*\)\s*/', ' ', $title) ?? $title;
         $clean = trim(preg_replace('/\s+/', ' ', $clean));
+
         return $clean !== '' ? $clean : null;
     }
 
@@ -277,6 +283,7 @@ class SaveGameDataJob extends AbstractPCGamingWikiJob implements ShouldQueue
         if (preg_match('/(19|20)\d{2}/', $dateText, $m)) {
             return (int) $m[0];
         }
+
         return null;
     }
 
@@ -302,6 +309,7 @@ class SaveGameDataJob extends AbstractPCGamingWikiJob implements ShouldQueue
         }
         // Deduplicate, preserve order
         $names = array_values(array_unique($names));
+
         return $names;
     }
 
@@ -343,11 +351,11 @@ class SaveGameDataJob extends AbstractPCGamingWikiJob implements ShouldQueue
 
         // Use page ID if available, fallback to exact page name
         if ($pageId) {
-            $params['where'] = 'Infobox_game._pageID=' . ((int) $pageId);
+            $params['where'] = 'Infobox_game._pageID='.((int) $pageId);
         } else {
             // Quote the title for Cargo where clause; escape existing quotes by doubling
-            $quoted = '"' . str_replace('"', '""', $pageTitle) . '"';
-            $params['where'] = 'Infobox_game._pageName=' . $quoted;
+            $quoted = '"'.str_replace('"', '""', $pageTitle).'"';
+            $params['where'] = 'Infobox_game._pageName='.$quoted;
         }
 
         $resp = Http::timeout(30)->get($apiUrl, $params);
@@ -358,6 +366,7 @@ class SaveGameDataJob extends AbstractPCGamingWikiJob implements ShouldQueue
                 'title' => $pageTitle,
                 'page_id' => $pageId,
             ]);
+
             return [];
         }
 
@@ -405,6 +414,7 @@ class SaveGameDataJob extends AbstractPCGamingWikiJob implements ShouldQueue
                 'title' => $pageTitle,
                 'page_id' => $pageId,
             ]);
+
             return null;
         }
 
@@ -414,6 +424,7 @@ class SaveGameDataJob extends AbstractPCGamingWikiJob implements ShouldQueue
         if (is_array($text)) {
             $text = $text['*'] ?? null;
         }
+
         return is_string($text) ? $text : null;
     }
 
@@ -444,6 +455,7 @@ class SaveGameDataJob extends AbstractPCGamingWikiJob implements ShouldQueue
                 'title' => $pageTitle,
                 'page_id' => $pageId,
             ]);
+
             return null;
         }
 
@@ -452,6 +464,7 @@ class SaveGameDataJob extends AbstractPCGamingWikiJob implements ShouldQueue
         if (is_array($wt)) {
             $wt = $wt['*'] ?? null;
         }
+
         return is_string($wt) ? $wt : null;
     }
 
@@ -484,6 +497,7 @@ class SaveGameDataJob extends AbstractPCGamingWikiJob implements ShouldQueue
                 'page_id' => $pageId,
                 'props' => $props,
             ]);
+
             return [];
         }
 
@@ -495,8 +509,11 @@ class SaveGameDataJob extends AbstractPCGamingWikiJob implements ShouldQueue
         }
         if (isset($json['parse']['wikitext'])) {
             $wt = is_array($json['parse']['wikitext']) ? ($json['parse']['wikitext']['*'] ?? null) : $json['parse']['wikitext'];
-            if (is_string($wt)) { $out['wikitext'] = $wt; }
+            if (is_string($wt)) {
+                $out['wikitext'] = $wt;
+            }
         }
+
         return $out;
     }
 
@@ -505,9 +522,9 @@ class SaveGameDataJob extends AbstractPCGamingWikiJob implements ShouldQueue
      */
     protected function parseLeadFromHtml(string $html): ?string
     {
-        $dom = new \DOMDocument();
+        $dom = new \DOMDocument;
         libxml_use_internal_errors(true);
-        $loaded = $dom->loadHTML('<?xml encoding="utf-8" ?>' . $html);
+        $loaded = $dom->loadHTML('<?xml encoding="utf-8" ?>'.$html);
         libxml_clear_errors();
         if (! $loaded) {
             return null;
@@ -519,8 +536,10 @@ class SaveGameDataJob extends AbstractPCGamingWikiJob implements ShouldQueue
         }
         if ($p) {
             $text = $this->normalizeText($p->textContent);
+
             return $text !== '' ? $text : null;
         }
+
         return null;
     }
 
@@ -535,9 +554,9 @@ class SaveGameDataJob extends AbstractPCGamingWikiJob implements ShouldQueue
             'release_dates' => [], 'cover_url' => null,
         ];
 
-        $dom = new \DOMDocument();
+        $dom = new \DOMDocument;
         libxml_use_internal_errors(true);
-        $loaded = $dom->loadHTML('<?xml encoding="utf-8" ?>' . $html);
+        $loaded = $dom->loadHTML('<?xml encoding="utf-8" ?>'.$html);
         libxml_clear_errors();
         if (! $loaded) {
             return $result;
@@ -563,6 +582,7 @@ class SaveGameDataJob extends AbstractPCGamingWikiJob implements ShouldQueue
             $th = $xpath->query('.//th[contains(@class, "template-infobox-header")]', $tr)->item(0);
             if ($th) {
                 $currentHeader = $this->normalizeText($th->textContent);
+
                 continue;
             }
 
@@ -571,23 +591,31 @@ class SaveGameDataJob extends AbstractPCGamingWikiJob implements ShouldQueue
                 $typeTd = $xpath->query('.//td[contains(@class, "template-infobox-type")]', $tr)->item(0);
                 if ($typeTd) {
                     $platform = $this->normalizeText($typeTd->textContent);
-                    if ($platform !== '') { $result['platforms'][] = $platform; }
+                    if ($platform !== '') {
+                        $result['platforms'][] = $platform;
+                    }
                 }
                 $dateTd = $xpath->query('.//td[contains(@class, "template-infobox-info")]', $tr)->item(0);
                 if ($dateTd) {
                     $dateText = $this->normalizeText($dateTd->textContent);
-                    if ($dateText !== '') { $result['release_dates'][] = $dateText; }
+                    if ($dateText !== '') {
+                        $result['release_dates'][] = $dateText;
+                    }
                 }
             }
 
             // General info rows: label may be implicit via header, value is in .template-infobox-info
             $infoTd = $xpath->query('.//td[contains(@class, "template-infobox-info")]', $tr)->item(0);
-            if (! $infoTd) { continue; }
+            if (! $infoTd) {
+                continue;
+            }
 
             $texts = [];
             foreach ($xpath->query('.//a', $infoTd) as $a) {
                 $txt = $this->normalizeText($a->textContent);
-                if ($txt !== '') { $texts[] = $txt; }
+                if ($txt !== '') {
+                    $texts[] = $txt;
+                }
             }
             if (empty($texts)) {
                 $raw = $this->normalizeText($infoTd->textContent);
@@ -595,7 +623,9 @@ class SaveGameDataJob extends AbstractPCGamingWikiJob implements ShouldQueue
                     // split by comma
                     foreach (preg_split('/\s*,\s*/', $raw) as $p) {
                         $p = $this->normalizeText($p);
-                        if ($p !== '') { $texts[] = $p; }
+                        if ($p !== '') {
+                            $texts[] = $p;
+                        }
                     }
                 }
             }
@@ -611,7 +641,9 @@ class SaveGameDataJob extends AbstractPCGamingWikiJob implements ShouldQueue
                 }
             }
 
-            if (! $currentHeader) { continue; }
+            if (! $currentHeader) {
+                continue;
+            }
             $header = strtolower($this->normalizeText($currentHeader));
 
             if (strpos($header, 'developer') !== false) {
@@ -639,12 +671,14 @@ class SaveGameDataJob extends AbstractPCGamingWikiJob implements ShouldQueue
         }
 
         // Deduplicate and normalize whitespace for list fields
-        foreach (['developers','publishers','engines','modes','genres','platforms','series','release_dates'] as $k) {
+        foreach (['developers', 'publishers', 'engines', 'modes', 'genres', 'platforms', 'series', 'release_dates'] as $k) {
             $arr = $result[$k];
             $norm = [];
             foreach ($arr as $v) {
                 $v = $this->normalizeText($v);
-                if ($v !== '') { $norm[] = $v; }
+                if ($v !== '') {
+                    $norm[] = $v;
+                }
             }
             $result[$k] = array_values(array_unique($norm));
         }
@@ -662,13 +696,16 @@ class SaveGameDataJob extends AbstractPCGamingWikiJob implements ShouldQueue
      */
     protected function normalizeText(?string $text): string
     {
-        if ($text === null) { return ''; }
+        if ($text === null) {
+            return '';
+        }
         // Decode any HTML entities just in case
         $text = html_entity_decode($text, ENT_QUOTES | ENT_HTML5, 'UTF-8');
         // Replace non-breaking spaces with regular spaces
         $text = str_replace("\xC2\xA0", ' ', $text);
         // Collapse any whitespace to single spaces (unicode-aware)
         $text = preg_replace('/\s+/u', ' ', $text) ?? $text;
+
         return trim($text);
     }
 

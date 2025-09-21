@@ -17,10 +17,10 @@ class SaveGameDataJobWikipageContentTest extends TestCase
 
         $lead = 'This is the first paragraph lead for Foo Game.';
         $html = '<div class="mw-parser-output">'
-            . '<table id="infobox-game" class="vertical-navbox template-infobox"></table>'
-            . '<p>' . $lead . '</p>'
-            . '<p>Second paragraph</p>'
-            . '</div>';
+            .'<table id="infobox-game" class="vertical-navbox template-infobox"></table>'
+            .'<p>'.$lead.'</p>'
+            .'<p>Second paragraph</p>'
+            .'</div>';
 
         // Fake a parse API call that returns HTML content; job should not persist Wikipage anymore
         Http::fake([
