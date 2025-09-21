@@ -82,7 +82,7 @@ class PCGamingWikiClient
      * Call MediaWiki parse API with given props (e.g., ['text'], ['wikitext']).
      * formatversion=2 is used for simpler JSON structure.
      */
-    public function parse(array $props, string $pageTitle = null, ?int $pageId = null): ?array
+    public function parse(array $props, ?string $pageTitle = null, ?int $pageId = null): ?array
     {
         $params = [
             'action' => 'parse',
@@ -209,6 +209,6 @@ class PCGamingWikiClient
             return null;
         }
 
-        return 'https://www.pcgamingwiki.com/wiki/' . rawurlencode(str_replace(' ', '_', $title));
+        return 'https://www.pcgamingwiki.com/wiki/'.rawurlencode(str_replace(' ', '_', $title));
     }
 }

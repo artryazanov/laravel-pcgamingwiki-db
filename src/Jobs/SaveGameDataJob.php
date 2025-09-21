@@ -37,7 +37,7 @@ class SaveGameDataJob extends AbstractPCGamingWikiJob implements ShouldQueue
 
     /**
      * Execute the job.
-      */
+     */
     public function handle(): void
     {
         /** @var PCGamingWikiClient $client */
