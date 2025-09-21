@@ -236,7 +236,7 @@ class SaveGameDataJob extends AbstractPCGamingWikiJob implements ShouldQueue
         }
 
         // 6) Persist external links parsed from infobox icons
-        if (!empty($externalLinks)) {
+        if (! empty($externalLinks)) {
             foreach ($externalLinks as $link) {
                 $site = $link['site'] ?? null;
                 $url = $link['url'] ?? null;
