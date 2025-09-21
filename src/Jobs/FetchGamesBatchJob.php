@@ -2,8 +2,8 @@
 
 namespace Artryazanov\PCGamingWiki\Jobs;
 
+use Artryazanov\PCGamingWiki\Services\PCGamingWikiClient;
 use Illuminate\Contracts\Queue\ShouldQueue;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
 class FetchGamesBatchJob extends AbstractPCGamingWikiJob implements ShouldQueue
@@ -28,27 +28,14 @@ class FetchGamesBatchJob extends AbstractPCGamingWikiJob implements ShouldQueue
      */
     public function handle(): void
     {
-        $apiUrl = config('pcgamingwiki.api_url');
+        /** @var PCGamingWikiClient $client */
+        $client = app(PCGamingWikiClient::class);
 
         Log::info('PCGamingWiki FetchGamesBatchJob: fetching', ['apcontinue' => $this->apcontinue, 'limit' => $this->limit]);
 
-        $params = [
-            'action' => 'query',
-            'list' => 'allpages',
-            'aplimit' => $this->limit,
-            'apnamespace' => '0', // main/article namespace only
-            'format' => config('pcgamingwiki.format', 'json'),
-        ];
-        if ($this->apcontinue) {
-            $params['apcontinue'] = $this->apcontinue;
-        }
-
-        $response = Http::timeout(30)->get($apiUrl, $params);
-
-        if (! $response->ok()) {
+        $result = $client->getAllPages($this->limit, $this->apcontinue);
+        if ($result === null) {
             Log::error('PCGamingWiki API request failed', [
-                'status' => $response->status(),
-                'body' => $response->body(),
                 'apcontinue' => $this->apcontinue,
                 'limit' => $this->limit,
             ]);
@@ -56,15 +43,7 @@ class FetchGamesBatchJob extends AbstractPCGamingWikiJob implements ShouldQueue
             return; // Fail softly; the queue can retry if configured
         }
 
-        $data = $response->json();
-
-        if (isset($data['error'])) {
-            Log::error('PCGamingWiki API error', $data['error']);
-
-            return;
-        }
-
-        $pages = $data['query']['allpages'] ?? [];
+        $pages = $result['pages'] ?? [];
 
         if (empty($pages)) {
             Log::info('PCGamingWiki FetchGamesBatchJob: no more records to process', ['apcontinue' => $this->apcontinue]);
@@ -77,11 +56,8 @@ class FetchGamesBatchJob extends AbstractPCGamingWikiJob implements ShouldQueue
             $title = $p['title'] ?? null;
             $pageID = $p['pageid'] ?? null;
 
-            // Build the canonical PCGamingWiki page URL from page title
-            $pcgwUrl = null;
-            if ($title) {
-                $pcgwUrl = 'https://www.pcgamingwiki.com/wiki/'.rawurlencode(str_replace(' ', '_', $title));
-            }
+            // Build the canonical PCGamingWiki page URL from page title via client helper
+            $pcgwUrl = $client->buildPageUrl($title);
 
             $gameData = [
                 'page_name' => $title,
@@ -100,7 +76,7 @@ class FetchGamesBatchJob extends AbstractPCGamingWikiJob implements ShouldQueue
         ]);
 
         // Chain next batch while API provides continuation token
-        $nextToken = $data['continue']['apcontinue'] ?? null;
+        $nextToken = $result['continue'] ?? null;
         if ($nextToken) {
             FetchGamesBatchJob::dispatch($this->limit, $nextToken);
         }

@@ -9,9 +9,9 @@ use Artryazanov\PCGamingWiki\Models\Genre;
 use Artryazanov\PCGamingWiki\Models\Mode;
 use Artryazanov\PCGamingWiki\Models\Platform;
 use Artryazanov\PCGamingWiki\Models\Series;
+use Artryazanov\PCGamingWiki\Services\PCGamingWikiClient;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
 class SaveGameDataJob extends AbstractPCGamingWikiJob implements ShouldQueue
@@ -37,9 +37,12 @@ class SaveGameDataJob extends AbstractPCGamingWikiJob implements ShouldQueue
 
     /**
      * Execute the job.
-     */
+      */
     public function handle(): void
     {
+        /** @var PCGamingWikiClient $client */
+        $client = app(PCGamingWikiClient::class);
+
         // 1) Prepare basic identifiers
         $title = $this->data['title'] ?? $this->data['page_name'] ?? null;
         $pcgwUrl = $this->data['pcgw_url'] ?? null;
@@ -78,14 +81,14 @@ class SaveGameDataJob extends AbstractPCGamingWikiJob implements ShouldQueue
                 if ($needHtmlForData) {
                     // Fetch parse HTML once
                     $props = ['text'];
-                    $parsedPage = $this->fetchParse($title, $pageId, $props);
+                    $parsedPage = $this->fetchParse($client, $title, $pageId, $props);
                     if (($parsedPage['text'] ?? null) && $html === null) {
                         $html = $parsedPage['text'];
                     }
 
                     // Fallback: if combined parse returned nothing for text, try legacy fetch
                     if ($html === null) {
-                        $html = $this->fetchInfoboxHtml($title, $pageId);
+                        $html = $this->fetchInfoboxHtml($client, $title, $pageId);
                     }
                 }
 
@@ -112,7 +115,7 @@ class SaveGameDataJob extends AbstractPCGamingWikiJob implements ShouldQueue
                 $needsCover = empty($this->data['cover_url'] ?? null);
 
                 if ($needsDevelopers || $needsPublishers || $needsRelease || $needsCover) {
-                    $fetched = $this->fetchInfoboxData($title, $pageId);
+                    $fetched = $this->fetchInfoboxData($client, $title, $pageId);
                     foreach ([
                         'developers' => 'developers',
                         'publishers' => 'publishers',
@@ -329,186 +332,40 @@ class SaveGameDataJob extends AbstractPCGamingWikiJob implements ShouldQueue
      * Fetch infobox data for a PCGamingWiki page using Cargo.
      * Returns standardized keys: developers, publishers, release_date, cover_url.
      */
-    protected function fetchInfoboxData(string $pageTitle, ?int $pageId = null): array
+    protected function fetchInfoboxData(PCGamingWikiClient $client, string $pageTitle, ?int $pageId = null): array
     {
-        $apiUrl = config('pcgamingwiki.api_url', 'https://www.pcgamingwiki.com/w/api.php');
-
-        // Prepare fields with aliases so response keys are stable
-        $fields = implode(',', [
-            'Infobox_game.Developers=Developers',
-            'Infobox_game.Publisher=Publisher',
-            'Infobox_game.Released=Released',
-            'Infobox_game.Cover_URL=Cover_URL',
-        ]);
-
-        $params = [
-            'action' => 'cargoquery',
-            'tables' => 'Infobox_game',
-            'fields' => $fields,
-            'limit' => 1,
-            'format' => config('pcgamingwiki.format', 'json'),
-        ];
-
-        // Use page ID if available, fallback to exact page name
-        if ($pageId) {
-            $params['where'] = 'Infobox_game._pageID='.((int) $pageId);
-        } else {
-            // Quote the title for Cargo where clause; escape existing quotes by doubling
-            $quoted = '"'.str_replace('"', '""', $pageTitle).'"';
-            $params['where'] = 'Infobox_game._pageName='.$quoted;
-        }
-
-        $resp = Http::timeout(30)->get($apiUrl, $params);
-        if (! $resp->ok()) {
-            Log::warning('PCGW cargoquery failed', [
-                'status' => $resp->status(),
-                'body' => $resp->body(),
-                'title' => $pageTitle,
-                'page_id' => $pageId,
-            ]);
-
-            return [];
-        }
-
-        $json = $resp->json();
-        $rows = $json['cargoquery'] ?? [];
-        if (empty($rows)) {
-            return [];
-        }
-        $titleRow = $rows[0]['title'] ?? [];
-
-        return [
-            'developers' => $titleRow['Developers'] ?? null,
-            // normalize singular to our plural key
-            'publishers' => $titleRow['Publisher'] ?? null,
-            'publisher' => $titleRow['Publisher'] ?? null,
-            'release_date' => $titleRow['Released'] ?? null,
-            'cover_url' => $titleRow['Cover_URL'] ?? null,
-        ];
+        return $client->getInfoboxDataViaCargo($pageTitle, $pageId);
     }
 
     /**
      * Fetch infobox HTML via MediaWiki parse API.
      */
-    protected function fetchInfoboxHtml(string $pageTitle, ?int $pageId = null): ?string
+    protected function fetchInfoboxHtml(PCGamingWikiClient $client, string $pageTitle, ?int $pageId = null): ?string
     {
-        $apiUrl = config('pcgamingwiki.api_url', 'https://www.pcgamingwiki.com/w/api.php');
-
-        $params = [
-            'action' => 'parse',
-            'prop' => 'text',
-            'format' => config('pcgamingwiki.format', 'json'),
-            'formatversion' => 2,
-        ];
-        if ($pageId) {
-            $params['pageid'] = (int) $pageId;
-        } else {
-            $params['page'] = $pageTitle;
-        }
-
-        $resp = Http::timeout(30)->get($apiUrl, $params);
-        if (! $resp->ok()) {
-            Log::warning('PCGW parse API failed', [
-                'status' => $resp->status(),
-                'body' => $resp->body(),
-                'title' => $pageTitle,
-                'page_id' => $pageId,
-            ]);
-
-            return null;
-        }
-
-        $json = $resp->json();
-        // formatversion=2 returns parse.text as string; otherwise it's array['*']
-        $text = $json['parse']['text'] ?? null;
-        if (is_array($text)) {
-            $text = $text['*'] ?? null;
-        }
-
-        return is_string($text) ? $text : null;
+        return $client->getInfoboxHtml($pageTitle, $pageId);
     }
 
     /**
      * Fetch raw page wikitext via MediaWiki parse API.
      */
-    protected function fetchWikitext(string $pageTitle, ?int $pageId = null): ?string
+    protected function fetchWikitext(PCGamingWikiClient $client, string $pageTitle, ?int $pageId = null): ?string
     {
-        $apiUrl = config('pcgamingwiki.api_url', 'https://www.pcgamingwiki.com/w/api.php');
-
-        $params = [
-            'action' => 'parse',
-            'prop' => 'wikitext',
-            'format' => config('pcgamingwiki.format', 'json'),
-            'formatversion' => 2,
-        ];
-        if ($pageId) {
-            $params['pageid'] = (int) $pageId;
-        } else {
-            $params['page'] = $pageTitle;
-        }
-
-        $resp = Http::timeout(30)->get($apiUrl, $params);
-        if (! $resp->ok()) {
-            Log::warning('PCGW parse API (wikitext) failed', [
-                'status' => $resp->status(),
-                'body' => $resp->body(),
-                'title' => $pageTitle,
-                'page_id' => $pageId,
-            ]);
-
-            return null;
-        }
-
-        $json = $resp->json();
-        $wt = $json['parse']['wikitext'] ?? null;
-        if (is_array($wt)) {
-            $wt = $wt['*'] ?? null;
-        }
-
-        return is_string($wt) ? $wt : null;
+        return $client->getWikitext($pageTitle, $pageId);
     }
 
     /**
      * Fetch MediaWiki parse for multiple props in a single request.
      * Returns array keys that may include 'text' and 'wikitext'.
      */
-    protected function fetchParse(string $pageTitle, ?int $pageId = null, array $props = ['text']): array
+    protected function fetchParse(PCGamingWikiClient $client, string $pageTitle, ?int $pageId = null, array $props = ['text']): array
     {
-        $apiUrl = config('pcgamingwiki.api_url', 'https://www.pcgamingwiki.com/w/api.php');
-
-        $params = [
-            'action' => 'parse',
-            'prop' => implode('|', $props),
-            'format' => config('pcgamingwiki.format', 'json'),
-            'formatversion' => 2,
-        ];
-        if ($pageId) {
-            $params['pageid'] = (int) $pageId;
-        } else {
-            $params['page'] = $pageTitle;
-        }
-
-        $resp = Http::timeout(30)->get($apiUrl, $params);
-        if (! $resp->ok()) {
-            Log::warning('PCGW parse API (combined) failed', [
-                'status' => $resp->status(),
-                'body' => $resp->body(),
-                'title' => $pageTitle,
-                'page_id' => $pageId,
-                'props' => $props,
-            ]);
-
-            return [];
-        }
-
-        $json = $resp->json();
+        $parse = $client->parse($props, $pageTitle, $pageId) ?? [];
         $out = [];
-        // formatversion=2 returns strings
-        if (isset($json['parse']['text'])) {
-            $out['text'] = is_array($json['parse']['text']) ? ($json['parse']['text']['*'] ?? null) : $json['parse']['text'];
+        if (isset($parse['text'])) {
+            $out['text'] = is_array($parse['text']) ? ($parse['text']['*'] ?? null) : $parse['text'];
         }
-        if (isset($json['parse']['wikitext'])) {
-            $wt = is_array($json['parse']['wikitext']) ? ($json['parse']['wikitext']['*'] ?? null) : $json['parse']['wikitext'];
+        if (isset($parse['wikitext'])) {
+            $wt = is_array($parse['wikitext']) ? ($parse['wikitext']['*'] ?? null) : $parse['wikitext'];
             if (is_string($wt)) {
                 $out['wikitext'] = $wt;
             }

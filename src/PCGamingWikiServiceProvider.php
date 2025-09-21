@@ -3,6 +3,7 @@
 namespace Artryazanov\PCGamingWiki;
 
 use Artryazanov\PCGamingWiki\Console\SyncGamesCommand;
+use Artryazanov\PCGamingWiki\Services\PCGamingWikiClient;
 use Illuminate\Support\ServiceProvider;
 
 class PCGamingWikiServiceProvider extends ServiceProvider
@@ -14,6 +15,14 @@ class PCGamingWikiServiceProvider extends ServiceProvider
     {
         // Merge package configuration
         $this->mergeConfigFrom(__DIR__.'/../config/pcgamingwiki.php', 'pcgamingwiki');
+
+        // Bind PCGamingWikiClient as a singleton
+        $this->app->singleton(PCGamingWikiClient::class, function ($app) {
+            return new PCGamingWikiClient(
+                $app['config']->get('pcgamingwiki.api_url'),
+                $app['config']->get('pcgamingwiki.user_agent')
+            );
+        });
     }
 
     /**

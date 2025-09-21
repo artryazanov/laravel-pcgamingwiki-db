@@ -13,6 +13,17 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | User Agent
+    |--------------------------------------------------------------------------
+    |
+    | The User-Agent header sent with each request to PCGamingWiki API.
+    | Please customize in your app's .env with contact details.
+    |
+    */
+    'user_agent' => env('PCGW_USER_AGENT', 'LaravelPCGamingWikiDb/1.0 (+https://example.com; contact@example.com)'),
+
+    /*
+    |--------------------------------------------------------------------------
     | API Format
     |--------------------------------------------------------------------------
     |
