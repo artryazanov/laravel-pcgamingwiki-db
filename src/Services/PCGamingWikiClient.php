@@ -21,8 +21,7 @@ class PCGamingWikiClient
         protected string $userAgent,
         protected int $timeoutSeconds = 30
     ) {
-        $this->http = Http::baseUrl($apiEndpoint)
-            ->withHeaders(['User-Agent' => $userAgent])
+        $this->http = Http::withHeaders(['User-Agent' => $userAgent])
             ->acceptJson()
             ->timeout($this->timeoutSeconds);
     }
@@ -45,11 +44,12 @@ class PCGamingWikiClient
             $params['apcontinue'] = $continueToken;
         }
 
-        $response = $this->http->get('', $params);
+        $response = $this->http->get($this->apiEndpoint, $params);
         if ($response->failed()) {
             Log::warning('PCGamingWiki getAllPages failed', [
                 'status' => $response->status(),
                 'body' => $response->body(),
+                'params' => $params,
             ]);
 
             return null;
@@ -96,7 +96,7 @@ class PCGamingWikiClient
             $params['page'] = $pageTitle;
         }
 
-        $resp = $this->http->get('', $params);
+        $resp = $this->http->get($this->apiEndpoint, $params);
         if ($resp->failed()) {
             Log::warning('PCGamingWiki parse API failed', [
                 'status' => $resp->status(),
@@ -173,7 +173,7 @@ class PCGamingWikiClient
             $params['where'] = 'Infobox_game._pageName='.$quoted;
         }
 
-        $resp = $this->http->get('', $params);
+        $resp = $this->http->get($this->apiEndpoint, $params);
         if ($resp->failed()) {
             Log::warning('PCGW cargoquery failed', [
                 'status' => $resp->status(),
